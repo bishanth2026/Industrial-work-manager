@@ -1,4 +1,4 @@
-name: Apply Daily Wage Payroll Fix
+name: Apply Payroll Updates
 on:
   push:
     branches: [main]
@@ -9,12 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Patch index.html
+      - name: Patch payroll
         run: |
-          python3 - <<'PY'
+          python - <<'PY'
           from pathlib import Path
-          p=Path('index.html')
-          s=p.read_text(encoding='utf-8')
+          p=Path('index.html'); s=p.read_text(encoding='utf-8')
           old="""  const factor=paid/working;
   const basic=Math.max(0,+emp.basic||0)*factor;
   const hra=Math.max(0,+emp.hra||0)*factor;
@@ -26,22 +25,23 @@ jobs:
   const hra=daily ? Math.max(0,+emp.hra||0)*paid : Math.max(0,+emp.hra||0)*factor;
   const foodAllowance=daily ? Math.max(0,+emp.foodAllowance||0)*paid : Math.max(0,+emp.foodAllowance||0)*factor;
   const allowance=daily ? Math.max(0,+emp.allowance||0)*paid : Math.max(0,+emp.allowance||0)*factor;"""
-          old2="""    const factor=paid/working, basic=(+emp.basic||0)*factor,hra=(+emp.hra||0)*factor,foodAllowance=(+emp.foodAllowance||0)*factor,allowance=(+emp.allowance||0)*factor;"""
-          new2="""    const factor=paid/working, daily=emp.wageType==='daily', basic=daily?Math.max(0,+emp.basic||0)*paid:Math.max(0,+emp.basic||0)*factor, hra=daily?Math.max(0,+emp.hra||0)*paid:Math.max(0,+emp.hra||0)*factor, foodAllowance=daily?Math.max(0,+emp.foodAllowance||0)*paid:Math.max(0,+emp.foodAllowance||0)*factor, allowance=daily?Math.max(0,+emp.allowance||0)*paid:Math.max(0,+emp.allowance||0)*factor;"""
-          assert old in s or "daily=emp.wageType==='daily'" in s
-          if old in s: s=s.replace(old,new,1)
-          if old2 in s: s=s.replace(old2,new2,1)
-          s=s.replace('<th>Paid Days</th>','<th>Present Days</th>')
+          s=s.replace(old,new,1)
+          old2="const factor=paid/working, basic=(+emp.basic||0)*factor,hra=(+emp.hra||0)*factor,foodAllowance=(+emp.foodAllowance||0)*factor,allowance=(+emp.allowance||0)*factor;"
+          new2="const factor=paid/working, daily=emp.wageType==='daily', basic=daily?Math.max(0,+emp.basic||0)*paid:Math.max(0,+emp.basic||0)*factor, hra=daily?Math.max(0,+emp.hra||0)*paid:Math.max(0,+emp.hra||0)*factor, foodAllowance=daily?Math.max(0,+emp.foodAllowance||0)*paid:Math.max(0,+emp.foodAllowance||0)*factor, allowance=daily?Math.max(0,+emp.allowance||0)*paid:Math.max(0,+emp.allowance||0)*factor;"
+          s=s.replace(old2,new2,1).replace('<th>Paid Days</th>','<th>Present Days</th>')
+          start=s.find('function renderEmployeeAdvances(){'); end=s.find('\n}\n\nfunction generatePayrollAll(){',start)
+          if start<0 or end<0: raise SystemExit('advance renderer not found')
+          fn='''function renderEmployeeAdvances(){\n  const el=document.getElementById('employeeAdvanceTable'); if(!el)return;\n  const rows=(db.employeeAdvances||[]).slice().sort((a,b)=>{const ea=db.employees.find(x=>x.id===a.employeeId),eb=db.employees.find(x=>x.id===b.employeeId);return String(ea?.name||'Unknown').localeCompare(String(eb?.name||'Unknown'))||String(a.date||'').localeCompare(String(b.date||''))});\n  const total=rows.reduce((sum,a)=>sum+(Number(a.amount)||0),0);\n  if(!rows.length){el.innerHTML='<div class="empty">No employee advances recorded. Add an advance here and it will automatically be deducted from that employee\\'s payroll for the same month.</div>';return}\n  const groups=[]; rows.forEach(a=>{let g=groups.find(x=>x.employeeId===a.employeeId);if(!g){g={employeeId:a.employeeId,items:[]};groups.push(g)}g.items.push(a)});\n  const body=groups.map(g=>{const e=db.employees.find(x=>x.id===g.employeeId),subtotal=g.items.reduce((sum,a)=>sum+(Number(a.amount)||0),0);const entries=g.items.map(a=>'<tr><td>'+esc(a.date||'-')+'</td><td>'+esc(projectName(a.projectId)||'Office / Unassigned')+'</td><td><b>'+money(a.amount)+'</b></td><td>'+esc(a.method||'-')+'</td><td>'+esc(a.reference||'-')+'</td><td>'+esc(a.notes||'-')+'</td><td><button class="btn secondary" data-advance-edit="'+esc(a.id)+'">Edit</button> <button class="btn secondary" data-advance-delete="'+esc(a.id)+'">Delete</button></td></tr>').join('');return '<tr><td colspan="7" style="background:#eee9ff;padding:12px 10px"><b style="color:var(--primary)">'+esc(e?.name||'Unknown')+'</b> '+(e?.code?'<small>('+esc(e.code)+')</small>':'')+' <span style="float:right"><b>Total Advance: '+money(subtotal)+'</b></span></td></tr>'+entries}).join('');\n  el.innerHTML='<div style="margin-bottom:10px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>Total Advances: '+money(total)+'</b><small style="color:var(--muted)">Grouped by employee • date-wise history</small></div><div class="expense-table-wrap"><table><tr><th>Date</th><th>Project</th><th>Amount</th><th>Method</th><th>Reference</th><th>Notes</th><th>Actions</th></tr>'+body+'</table></div>';\n}'''
+          s=s[:start]+fn+s[end+2:]
           assert "daily=emp.wageType==='daily'" in s
-          assert "foodAllowance=daily" in s
-          assert "allowance=daily" in s
+          assert 'Grouped by employee' in s
           p.write_text(s,encoding='utf-8')
           PY
-      - name: Commit payroll change
+      - name: Commit and clean temporary workflows
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html
-          git diff --cached --quiet && exit 0
-          git commit -m 'Calculate daily wage allowances by present days'
+          rm -f .github/workflows/update-payroll-present-days.yml .github/workflows/test-fix.yml
+          git add index.html .github/workflows/update-payroll-present-days.yml .github/workflows/test-fix.yml
+          git commit -m 'Update daily payroll and employee advance history'
           git push
