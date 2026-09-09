@@ -1604,7 +1604,12 @@ function savePayrollForm(e){
   const month=String(f.get('month')||new Date().toISOString().slice(0,7));
   const attendance=db.attendance.find(x=>x.employeeId===emp.id&&x.month===month);
   const working=Math.max(1,+f.get('workingDays')||attendance?.workingDays||26);
-  const paidInput=attendance ? ((+attendance.presentDays||0)+((+attendance.halfDays||0)*0.5)) : Math.max(0,+f.get('paidDays')||0);
+  // Use the entered Present Days when a monthly attendance record has not
+  // yet been saved. This keeps an individual Daily Wage payroll calculation
+  // consistent with the Present Days shown in its form.
+  const presentDays=attendance ? (+attendance.presentDays||0) : Math.max(0,+f.get('presentDays')||0);
+  const halfDays=attendance ? (+attendance.halfDays||0) : Math.max(0,+f.get('halfDays')||0);
+  const paidInput=presentDays+(halfDays*0.5);
   const paid=Math.max(0,Math.min(working,paidInput));
   const factor=paid/working;
   // Basic follows the employee wage type. Daily-wage employees are paid only
@@ -1807,11 +1812,30 @@ function refreshPayrollAdvance(employeeId,month){
 }
 function renderEmployeeAdvances(){
   const el=document.getElementById('employeeAdvanceTable'); if(!el)return;
-  const rows=(db.employeeAdvances||[]).slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const rows=(db.employeeAdvances||[]).slice();
   const total=rows.reduce((sum,a)=>sum+(Number(a.amount)||0),0);
   if(!rows.length){el.innerHTML='<div class="empty">No employee advances recorded. Add an advance here and it will automatically be deducted from that employee\'s payroll for the same month.</div>';return}
-  const body=rows.map(a=>{const e=db.employees.find(x=>x.id===a.employeeId);return '<tr><td>'+esc(a.date||'-')+'</td><td><b>'+esc(e?.name||'Unknown')+'</b><br><small>'+esc(e?.code||'')+'</small></td><td>'+esc(projectName(a.projectId)||'Office / Unassigned')+'</td><td><b>'+money(a.amount)+'</b></td><td>'+esc(a.method||'-')+'</td><td>'+esc(a.reference||'-')+'</td><td><button class="btn secondary" data-advance-edit="'+esc(a.id)+'">Edit</button> <button class="btn secondary" data-advance-delete="'+esc(a.id)+'">Delete</button></td></tr>'}).join('');
-  el.innerHTML='<div style="margin-bottom:10px"><b>Total Advances:</b> '+money(total)+'</div><div class="expense-table-wrap"><table><tr><th>Date</th><th>Employee</th><th>Project</th><th>Amount</th><th>Method</th><th>Reference</th><th>Actions</th></tr>'+body+'</table></div>';
+  // Keep each employee together, then list that employee's advances by date.
+  // This avoids mixing different employees' advances when several are entered
+  // on the same date, while retaining per-advance edit and delete controls.
+  const groups=new Map();
+  rows.forEach(a=>{const key=a.employeeId||'';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(a)});
+  const body=[...groups.entries()].sort(([,a],[,b])=>{
+    const aDate=Math.max(...a.map(x=>Date.parse(x.date||'')||0));
+    const bDate=Math.max(...b.map(x=>Date.parse(x.date||'')||0));
+    return bDate-aDate;
+  }).map(([employeeId,advances])=>{
+    const employee=db.employees.find(x=>x.id===employeeId);
+    const employeeTotal=advances.reduce((sum,a)=>sum+(Number(a.amount)||0),0);
+    const dated=new Map();
+    advances.forEach(a=>{const date=a.date||'-';if(!dated.has(date))dated.set(date,[]);dated.get(date).push(a)});
+    const dateRows=[...dated.entries()].sort(([a],[b])=>String(b).localeCompare(String(a))).map(([date,entries])=>{
+      const dateTotal=entries.reduce((sum,a)=>sum+(Number(a.amount)||0),0);
+      return '<tr><td><b>'+esc(date)+'</b><br><small>Date total: '+money(dateTotal)+'</small></td><td>'+entries.map(a=>esc(projectName(a.projectId)||'Office / Unassigned')).join('<br>')+'</td><td><b>'+money(dateTotal)+'</b></td><td>'+entries.map(a=>esc(a.method||'-')).join('<br>')+'</td><td>'+entries.map(a=>esc(a.reference||'-')).join('<br>')+'</td><td>'+entries.map(a=>'<button class="btn secondary" data-advance-edit="'+esc(a.id)+'">Edit</button> <button class="btn secondary" data-advance-delete="'+esc(a.id)+'">Delete</button>').join('<br>')+'</td></tr>';
+    }).join('');
+    return '<tr><td colspan="6" style="background:var(--light);border-top:2px solid var(--border)"><b>'+esc(employee?.name||'Unknown')+'</b>'+((employee?.code)?' <small>('+esc(employee.code)+')</small>':'')+' <span style="float:right"><b>Employee Total: '+money(employeeTotal)+'</b></span></td></tr>'+dateRows;
+  }).join('');
+  el.innerHTML='<div style="margin-bottom:10px"><b>Total Advances:</b> '+money(total)+'</div><div class="expense-table-wrap"><table><tr><th>Date</th><th>Project</th><th>Amount</th><th>Method</th><th>Reference</th><th>Actions</th></tr>'+body+'</table></div>';
 }
 
 function generatePayrollAll(){
