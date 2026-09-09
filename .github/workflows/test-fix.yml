@@ -1,0 +1,14 @@
+name: Test Fix
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: echo "workflow works"
