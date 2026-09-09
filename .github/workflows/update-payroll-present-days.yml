@@ -1,17 +1,16 @@
-name: Update Payroll Daily Wage
+name: Apply Daily Wage Payroll Fix
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    branches:
+      - main
 permissions:
   contents: write
 jobs:
-  update:
-    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'Calculate daily wage and allowances by present days') }}
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Update payroll daily wage calculation
+      - name: Patch payroll formulas
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -32,28 +31,19 @@ jobs:
           new2="""    const factor=paid/working, daily=emp.wageType==='daily', basic=daily?Math.max(0,+emp.basic||0)*paid:Math.max(0,+emp.basic||0)*factor, hra=daily?Math.max(0,+emp.hra||0)*paid:Math.max(0,+emp.hra||0)*factor, foodAllowance=daily?Math.max(0,+emp.foodAllowance||0)*paid:Math.max(0,+emp.foodAllowance||0)*factor, allowance=daily?Math.max(0,+emp.allowance||0)*paid:Math.max(0,+emp.allowance||0)*factor;"""
           old3='<th>Paid Days</th>'
           new3='<th>Present Days</th>'
-          found=0
-          for old,new in [(old1,new1),(old2,new2),(old3,new3)]:
-            n=s.count(old)
-            if n:
-              s=s.replace(old,new); found+=n
-          print('Payroll replacements applied:',found)
-          assert new1 in s or new2 in s, 'Daily wage formulas were not found/applied'
+          for old,new in ((old1,new1),(old2,new2),(old3,new3)):
+            s=s.replace(old,new)
           p.write_text(s,encoding='utf-8')
-          PY
-      - name: Validate payroll logic
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          s=Path('index.html').read_text(encoding='utf-8')
           assert "daily=emp.wageType==='daily'" in s
-          assert "foodAllowance" in s and "allowance" in s
-          print('Payroll daily-wage validation passed')
+          assert "foodAllowance=daily" in s
+          assert "allowance=daily" in s
+          print('Daily wage payroll formulas applied successfully')
           PY
-      - name: Commit changes
+      - name: Commit and remove one-time workflow
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html
-          git diff --cached --quiet || git commit -m 'Calculate daily wage and allowances by present days'
+          rm -f .github/workflows/update-payroll-present-days.yml
+          git add index.html .github/workflows/update-payroll-present-days.yml
+          git commit -m 'Calculate daily wage allowances by present days'
           git push
