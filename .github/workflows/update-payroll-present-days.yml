@@ -1,10 +1,13 @@
 name: Update Payroll Present Days
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
 jobs:
   update:
+    if: ${{ !contains(github.event.head_commit.message, 'Show present days in payroll records') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,12 +17,7 @@ jobs:
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          replacements = [
-            ('<th>Paid Days</th>', '<th>Present Days</th>'),
-            ('<th>Paid Days</th><th>Gross Pay</th>', '<th>Present Days</th><th>Gross Pay</th>'),
-          ]
-          for a,b in replacements:
-            s=s.replace(a,b)
+          s=s.replace('<th>Paid Days</th>', '<th>Present Days</th>')
           p.write_text(s,encoding='utf-8')
           PY
       - name: Commit changes
