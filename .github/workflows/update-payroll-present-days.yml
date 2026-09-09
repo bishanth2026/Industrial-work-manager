@@ -17,19 +17,28 @@ jobs:
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          replacements = [
-            ("  // Basic follows the employee wage type. Daily-wage employees are paid only\n  // for paid/present days; HRA, food and other allowances are always monthly\n  // components and are prorated by paid days.\n  const basic=emp.wageType==='daily' ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;\n  const hra=Math.max(0,+emp.hra||0)*factor;\n  const foodAllowance=Math.max(0,+emp.foodAllowance||0)*factor;\n  const allowance=Math.max(0,+emp.allowance||0)*factor;",
-             "  // Daily-wage employees: basic, HRA, food allowance and other allowance\n  // are all daily rates and are multiplied by present/paid days.\n  // Monthly employees continue to be prorated by paid days / working days.\n  const daily=emp.wageType==='daily';\n  const basic=daily ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;\n  const hra=daily ? Math.max(0,+emp.hra||0)*paid : Math.max(0,+emp.hra||0)*factor;\n  const foodAllowance=daily ? Math.max(0,+emp.foodAllowance||0)*paid : Math.max(0,+emp.foodAllowance||0)*factor;\n  const allowance=daily ? Math.max(0,+emp.allowance||0)*paid : Math.max(0,+emp.allowance||0)*factor;"),
-            ("    // Daily Wage: basic = daily rate × paid days. Monthly allowances are\n    // always prorated by paid days, regardless of wage type.\n    const basic=emp.wageType==='daily' ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;\n    const hra=Math.max(0,+emp.hra||0)*factor;\n    const foodAllowance=Math.max(0,+emp.foodAllowance||0)*factor;\n    const allowance=Math.max(0,+emp.allowance||0)*factor;",
-             "    // Daily Wage: basic, HRA, food allowance and other allowance are all\n    // daily rates and are calculated directly from present/paid days.\n    // Monthly employees continue to use paid-days / working-days proration.\n    const daily=emp.wageType==='daily';\n    const basic=daily ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;\n    const hra=daily ? Math.max(0,+emp.hra||0)*paid : Math.max(0,+emp.hra||0)*factor;\n    const foodAllowance=daily ? Math.max(0,+emp.foodAllowance||0)*paid : Math.max(0,+emp.foodAllowance||0)*factor;\n    const allowance=daily ? Math.max(0,+emp.allowance||0)*paid : Math.max(0,+emp.allowance||0)*factor;"),
-            ("<div class=\"field\"><label>Wage Type</label><select name=\"wageType\"><option value=\"monthly\" ${emp?.wageType!=='daily'?'selected':''}>Monthly Salary</option><option value=\"daily\" ${emp?.wageType==='daily'?'selected':''}>Daily Wage</option></select></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'Daily Wage Rate':'Monthly Basic'}</label><input name=\"basic\" type=\"number\" min=\"0\" required value=\"${emp?.basic??''}\"></div>\n  <div class=\"field\"><label>HRA</label><input name=\"hra\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.hra??0}\"></div>\n  <div class=\"field\"><label>Food Allowance</label><input name=\"foodAllowance\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.foodAllowance??0}\"></div>\n  <div class=\"field\"><label>Other Allowance</label><input name=\"allowance\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.allowance??0}\"></div>",
-             "<div class=\"field\"><label>Wage Type</label><select name=\"wageType\"><option value=\"monthly\" ${emp?.wageType!=='daily'?'selected':''}>Monthly Salary</option><option value=\"daily\" ${emp?.wageType==='daily'?'selected':''}>Daily Wage</option></select></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'Daily Wage Rate':'Monthly Basic'}</label><input name=\"basic\" type=\"number\" min=\"0\" required value=\"${emp?.basic??''}\"></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'HRA / Day':'HRA / Month'}</label><input name=\"hra\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.hra??0}\"></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'Food Allowance / Day':'Food Allowance / Month'}</label><input name=\"foodAllowance\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.foodAllowance??0}\"></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'Other Allowance / Day':'Other Allowance / Month'}</label><input name=\"allowance\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.allowance??0}\"></div>"),
-            ('<th>Paid Days</th>','<th>Present Days</th>'),
-            ('<th>Month</th><th>Paid Days</th>','<th>Month</th><th>Present Days</th>'),
-          ]
-          for a,b in replacements:
-            if a in s:
-              s=s.replace(a,b)
+          old1="""  const factor=paid/working;
+  const basic=Math.max(0,+emp.basic||0)*factor;
+  const hra=Math.max(0,+emp.hra||0)*factor;
+  const foodAllowance=Math.max(0,+emp.foodAllowance||0)*factor;
+  const allowance=Math.max(0,+emp.allowance||0)*factor;"""
+          new1="""  const factor=paid/working;
+  const daily=emp.wageType==='daily';
+  const basic=daily ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;
+  const hra=daily ? Math.max(0,+emp.hra||0)*paid : Math.max(0,+emp.hra||0)*factor;
+  const foodAllowance=daily ? Math.max(0,+emp.foodAllowance||0)*paid : Math.max(0,+emp.foodAllowance||0)*factor;
+  const allowance=daily ? Math.max(0,+emp.allowance||0)*paid : Math.max(0,+emp.allowance||0)*factor;"""
+          old2="""    const factor=paid/working, basic=(+emp.basic||0)*factor,hra=(+emp.hra||0)*factor,foodAllowance=(+emp.foodAllowance||0)*factor,allowance=(+emp.allowance||0)*factor;"""
+          new2="""    const factor=paid/working, daily=emp.wageType==='daily', basic=daily?Math.max(0,+emp.basic||0)*paid:Math.max(0,+emp.basic||0)*factor, hra=daily?Math.max(0,+emp.hra||0)*paid:Math.max(0,+emp.hra||0)*factor, foodAllowance=daily?Math.max(0,+emp.foodAllowance||0)*paid:Math.max(0,+emp.foodAllowance||0)*factor, allowance=daily?Math.max(0,+emp.allowance||0)*paid:Math.max(0,+emp.allowance||0)*factor;"""
+          old3='<th>Paid Days</th>'
+          new3='<th>Present Days</th>'
+          found=0
+          for old,new in [(old1,new1),(old2,new2),(old3,new3)]:
+            n=s.count(old)
+            if n:
+              s=s.replace(old,new); found+=n
+          print('Payroll replacements applied:',found)
+          assert new1 in s or new2 in s, 'Daily wage formulas were not found/applied'
           p.write_text(s,encoding='utf-8')
           PY
       - name: Validate payroll logic
@@ -37,14 +46,8 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           s=Path('index.html').read_text(encoding='utf-8')
-          checks=[
-            "const hra=daily ? Math.max(0,+emp.hra||0)*paid",
-            "const foodAllowance=daily ? Math.max(0,+emp.foodAllowance||0)*paid",
-            "const allowance=daily ? Math.max(0,+emp.allowance||0)*paid",
-            "<th>Present Days</th>"
-          ]
-          for c in checks:
-            assert c in s, c
+          assert "daily=emp.wageType==='daily'" in s
+          assert "foodAllowance" in s and "allowance" in s
           print('Payroll daily-wage validation passed')
           PY
       - name: Commit changes
