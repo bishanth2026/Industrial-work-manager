@@ -1,4 +1,4 @@
-name: Update Payroll Present Days
+name: Update Payroll Daily Wage
 on:
   push:
     branches: [main]
@@ -7,23 +7,50 @@ permissions:
   contents: write
 jobs:
   update:
-    if: ${{ !contains(github.event.head_commit.message, 'Show present days in payroll records') }}
+    if: ${{ !contains(github.event.head_commit.message, 'Calculate daily wage and allowances by present days') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Update payroll labels and paid-day display
+      - name: Update payroll daily wage calculation
         run: |
           python - <<'PY'
           from pathlib import Path
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          s=s.replace('<th>Paid Days</th>', '<th>Present Days</th>')
+          replacements = [
+            ("  // Basic follows the employee wage type. Daily-wage employees are paid only\n  // for paid/present days; HRA, food and other allowances are always monthly\n  // components and are prorated by paid days.\n  const basic=emp.wageType==='daily' ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;\n  const hra=Math.max(0,+emp.hra||0)*factor;\n  const foodAllowance=Math.max(0,+emp.foodAllowance||0)*factor;\n  const allowance=Math.max(0,+emp.allowance||0)*factor;",
+             "  // Daily-wage employees: basic, HRA, food allowance and other allowance\n  // are all daily rates and are multiplied by present/paid days.\n  // Monthly employees continue to be prorated by paid days / working days.\n  const daily=emp.wageType==='daily';\n  const basic=daily ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;\n  const hra=daily ? Math.max(0,+emp.hra||0)*paid : Math.max(0,+emp.hra||0)*factor;\n  const foodAllowance=daily ? Math.max(0,+emp.foodAllowance||0)*paid : Math.max(0,+emp.foodAllowance||0)*factor;\n  const allowance=daily ? Math.max(0,+emp.allowance||0)*paid : Math.max(0,+emp.allowance||0)*factor;"),
+            ("    // Daily Wage: basic = daily rate × paid days. Monthly allowances are\n    // always prorated by paid days, regardless of wage type.\n    const basic=emp.wageType==='daily' ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;\n    const hra=Math.max(0,+emp.hra||0)*factor;\n    const foodAllowance=Math.max(0,+emp.foodAllowance||0)*factor;\n    const allowance=Math.max(0,+emp.allowance||0)*factor;",
+             "    // Daily Wage: basic, HRA, food allowance and other allowance are all\n    // daily rates and are calculated directly from present/paid days.\n    // Monthly employees continue to use paid-days / working-days proration.\n    const daily=emp.wageType==='daily';\n    const basic=daily ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;\n    const hra=daily ? Math.max(0,+emp.hra||0)*paid : Math.max(0,+emp.hra||0)*factor;\n    const foodAllowance=daily ? Math.max(0,+emp.foodAllowance||0)*paid : Math.max(0,+emp.foodAllowance||0)*factor;\n    const allowance=daily ? Math.max(0,+emp.allowance||0)*paid : Math.max(0,+emp.allowance||0)*factor;"),
+            ("<div class=\"field\"><label>Wage Type</label><select name=\"wageType\"><option value=\"monthly\" ${emp?.wageType!=='daily'?'selected':''}>Monthly Salary</option><option value=\"daily\" ${emp?.wageType==='daily'?'selected':''}>Daily Wage</option></select></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'Daily Wage Rate':'Monthly Basic'}</label><input name=\"basic\" type=\"number\" min=\"0\" required value=\"${emp?.basic??''}\"></div>\n  <div class=\"field\"><label>HRA</label><input name=\"hra\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.hra??0}\"></div>\n  <div class=\"field\"><label>Food Allowance</label><input name=\"foodAllowance\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.foodAllowance??0}\"></div>\n  <div class=\"field\"><label>Other Allowance</label><input name=\"allowance\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.allowance??0}\"></div>",
+             "<div class=\"field\"><label>Wage Type</label><select name=\"wageType\"><option value=\"monthly\" ${emp?.wageType!=='daily'?'selected':''}>Monthly Salary</option><option value=\"daily\" ${emp?.wageType==='daily'?'selected':''}>Daily Wage</option></select></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'Daily Wage Rate':'Monthly Basic'}</label><input name=\"basic\" type=\"number\" min=\"0\" required value=\"${emp?.basic??''}\"></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'HRA / Day':'HRA / Month'}</label><input name=\"hra\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.hra??0}\"></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'Food Allowance / Day':'Food Allowance / Month'}</label><input name=\"foodAllowance\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.foodAllowance??0}\"></div>\n  <div class=\"field\"><label>${emp?.wageType==='daily'?'Other Allowance / Day':'Other Allowance / Month'}</label><input name=\"allowance\" type=\"number\" min=\"0\" step=\"0.01\" value=\"${emp?.allowance??0}\"></div>"),
+            ('<th>Paid Days</th>','<th>Present Days</th>'),
+            ('<th>Month</th><th>Paid Days</th>','<th>Month</th><th>Present Days</th>'),
+          ]
+          for a,b in replacements:
+            if a in s:
+              s=s.replace(a,b)
           p.write_text(s,encoding='utf-8')
+          PY
+      - name: Validate payroll logic
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          checks=[
+            "const hra=daily ? Math.max(0,+emp.hra||0)*paid",
+            "const foodAllowance=daily ? Math.max(0,+emp.foodAllowance||0)*paid",
+            "const allowance=daily ? Math.max(0,+emp.allowance||0)*paid",
+            "<th>Present Days</th>"
+          ]
+          for c in checks:
+            assert c in s, c
+          print('Payroll daily-wage validation passed')
           PY
       - name: Commit changes
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html
-          git diff --cached --quiet || git commit -m 'Show present days in payroll records'
+          git diff --cached --quiet || git commit -m 'Calculate daily wage and allowances by present days'
           git push
