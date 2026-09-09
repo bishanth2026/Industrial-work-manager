@@ -1,14 +1,47 @@
-name: Test Fix
+name: Apply Daily Wage Payroll Fix
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 permissions:
   contents: write
 jobs:
-  test:
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Test
-        run: echo "workflow works"
+      - name: Patch index.html
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old="""  const factor=paid/working;
+  const basic=Math.max(0,+emp.basic||0)*factor;
+  const hra=Math.max(0,+emp.hra||0)*factor;
+  const foodAllowance=Math.max(0,+emp.foodAllowance||0)*factor;
+  const allowance=Math.max(0,+emp.allowance||0)*factor;"""
+          new="""  const factor=paid/working;
+  const daily=emp.wageType==='daily';
+  const basic=daily ? Math.max(0,+emp.basic||0)*paid : Math.max(0,+emp.basic||0)*factor;
+  const hra=daily ? Math.max(0,+emp.hra||0)*paid : Math.max(0,+emp.hra||0)*factor;
+  const foodAllowance=daily ? Math.max(0,+emp.foodAllowance||0)*paid : Math.max(0,+emp.foodAllowance||0)*factor;
+  const allowance=daily ? Math.max(0,+emp.allowance||0)*paid : Math.max(0,+emp.allowance||0)*factor;"""
+          old2="""    const factor=paid/working, basic=(+emp.basic||0)*factor,hra=(+emp.hra||0)*factor,foodAllowance=(+emp.foodAllowance||0)*factor,allowance=(+emp.allowance||0)*factor;"""
+          new2="""    const factor=paid/working, daily=emp.wageType==='daily', basic=daily?Math.max(0,+emp.basic||0)*paid:Math.max(0,+emp.basic||0)*factor, hra=daily?Math.max(0,+emp.hra||0)*paid:Math.max(0,+emp.hra||0)*factor, foodAllowance=daily?Math.max(0,+emp.foodAllowance||0)*paid:Math.max(0,+emp.foodAllowance||0)*factor, allowance=daily?Math.max(0,+emp.allowance||0)*paid:Math.max(0,+emp.allowance||0)*factor;"""
+          assert old in s or "daily=emp.wageType==='daily'" in s
+          if old in s: s=s.replace(old,new,1)
+          if old2 in s: s=s.replace(old2,new2,1)
+          s=s.replace('<th>Paid Days</th>','<th>Present Days</th>')
+          assert "daily=emp.wageType==='daily'" in s
+          assert "foodAllowance=daily" in s
+          assert "allowance=daily" in s
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit payroll change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m 'Calculate daily wage allowances by present days'
+          git push
